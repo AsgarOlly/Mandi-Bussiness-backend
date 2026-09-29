@@ -75,7 +75,6 @@ class Payment(AuditModel):
     amount = models.DecimalField(max_digits=15, decimal_places=2)
     payment_method = models.CharField(max_length=30, choices=PAYMENT_METHODS, default='BANK_TRANSFER')
     transaction_reference = models.CharField(max_length=100, blank=True, null=True)
-    bank_name = models.CharField(max_length=100, blank=True, null=True)
     notes = models.TextField(blank=True, null=True)
 
     def __str__(self):

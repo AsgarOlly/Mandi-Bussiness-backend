@@ -200,7 +200,6 @@ class SupplierTruckPaymentViewSet(viewsets.ModelViewSet):
             supplier_obj = Supplier.objects.create(
                 supplier_code=code,
                 supplier_name=clean_sup_name,
-                company_name=clean_sup_name,
                 phone="9876543210",
                 city="Delhi"
             )

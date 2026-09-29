@@ -20,9 +20,6 @@ class PurchaseOrder(AuditModel):
     warehouse_name = models.CharField(max_length=100, default='Central Cold Hub', blank=True)
     truck_number = models.CharField(max_length=50, blank=True, default='')
     purchase_date = models.DateField()
-    arrival_date = models.DateField(blank=True, null=True)
-    arrival_time = models.TimeField(blank=True, null=True)
-    time_slot = models.CharField(max_length=50, blank=True, null=True)
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='DRAFT')
 
     subtotal = models.DecimalField(max_digits=15, decimal_places=2, default=0)

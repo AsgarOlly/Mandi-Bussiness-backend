@@ -13,7 +13,8 @@ load_dotenv(BASE_DIR / '.env')
 
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-fruit-erp-secret-key-production-ready')
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
-ALLOWED_HOSTS = ['*']
+allowed_hosts_env = os.getenv('ALLOWED_HOSTS')
+ALLOWED_HOSTS = [h.strip() for h in allowed_hosts_env.split(',') if h.strip()] if allowed_hosts_env else ['*']
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -71,18 +72,18 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
-# Database Setup with MySQL 8.0 support and SQLite fallback
+# Database Setup with MySQL support (environment variables for Render) and SQLite fallback
 use_sqlite = os.getenv('USE_SQLITE', 'False').lower() in ('true', '1')
 
 if not use_sqlite:
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.mysql',
-            'NAME': os.getenv('DB_NAME', 'fruit_erp_db'),
-            'USER': os.getenv('DB_USER', 'root'),
-            'PASSWORD': os.getenv('DB_PASSWORD', ''),
-            'HOST': os.getenv('DB_HOST', '127.0.0.1'),
-            'PORT': os.getenv('DB_PORT', '3306'),
+            'NAME': os.getenv('MYSQL_DATABASE') or os.getenv('DB_NAME', ''),
+            'USER': os.getenv('MYSQL_USER') or os.getenv('DB_USER', ''),
+            'PASSWORD': os.getenv('MYSQL_PASSWORD') if os.getenv('MYSQL_PASSWORD') is not None else os.getenv('DB_PASSWORD', ''),
+            'HOST': os.getenv('MYSQL_HOST') or os.getenv('DB_HOST', '127.0.0.1'),
+            'PORT': os.getenv('MYSQL_PORT') or os.getenv('DB_PORT') or '3306',
             'OPTIONS': {
                 'charset': 'utf8mb4',
                 'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",

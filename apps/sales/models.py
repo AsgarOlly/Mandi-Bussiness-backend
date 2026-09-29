@@ -28,9 +28,6 @@ class SalesOrder(AuditModel):
     warehouse_name = models.CharField(max_length=100, default='Central Cold Hub', blank=True)
     truck_number = models.CharField(max_length=50, blank=True, default='')
     order_date = models.DateField()
-    delivery_date = models.DateField(blank=True, null=True)
-    delivery_time = models.TimeField(blank=True, null=True)
-    time_slot = models.CharField(max_length=50, blank=True, null=True)
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='DRAFT')
     payment_terms = models.CharField(max_length=30, choices=PAYMENT_TERMS, default='CREDIT')
 

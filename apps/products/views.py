@@ -24,7 +24,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         if not category_id or not Category.objects.filter(id=category_id).exists():
             cat = Category.objects.first()
             if not cat:
-                cat = Category.objects.create(name='Fresh Fruits', description='Fresh produce and fruits')
+                cat = Category.objects.create(name='Fresh Fruits')
             data['category'] = cat.id
 
         if not data.get('product_code') or Product.objects.filter(product_code=data.get('product_code')).exists():

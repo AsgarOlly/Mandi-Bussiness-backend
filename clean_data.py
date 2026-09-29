@@ -58,12 +58,12 @@ print("Cleared Warehouses")
 
 print("\n=== SETTING UP CLEAN MASTER ESSENTIALS ===")
 # Ensure master categories & units exist so new entries have valid foreign keys
-cat1, _ = Category.objects.get_or_create(id=1, defaults={'name': 'Fresh Fruits', 'description': 'Fresh produce and fruits'})
-cat2, _ = Category.objects.get_or_create(id=2, defaults={'name': 'Dry Fruits & Nuts', 'description': 'Premium dry fruits and nuts'})
+cat1, _ = Category.objects.get_or_create(id=1, defaults={'name': 'Fresh Fruits'})
+cat2, _ = Category.objects.get_or_create(id=2, defaults={'name': 'Dry Fruits & Nuts'})
 print(f"Categories ready: {cat1.name}, {cat2.name}")
 
-u1, _ = Unit.objects.get_or_create(id=1, defaults={'unit_name': 'Kilogram', 'symbol': 'KG', 'unit_type': 'WEIGHT'})
-u2, _ = Unit.objects.get_or_create(id=2, defaults={'unit_name': 'Box', 'symbol': 'BX', 'unit_type': 'PACKAGING'})
+u1, _ = Unit.objects.get_or_create(id=1, defaults={'unit_name': 'Kilogram', 'symbol': 'KG'})
+u2, _ = Unit.objects.get_or_create(id=2, defaults={'unit_name': 'Box', 'symbol': 'BX'})
 print(f"Units ready: {u1.unit_name}, {u2.unit_name}")
 
 wh, _ = Warehouse.objects.get_or_create(id=1, defaults={'warehouse_code': 'WH-001', 'warehouse_name': 'Main Mandi Storage', 'city': 'Delhi'})

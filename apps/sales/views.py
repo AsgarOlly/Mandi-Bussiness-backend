@@ -130,7 +130,7 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
                 'invoice_no': inv_no,
                 'customer': so.customer,
                 'invoice_date': so.order_date,
-                'due_date': so.delivery_date or (so.order_date + datetime.timedelta(days=7)),
+                'due_date': so.order_date + datetime.timedelta(days=7),
                 'subtotal': so.subtotal,
                 'discount': so.discount,
                 'tax_amount': so.tax_amount,
