@@ -9,12 +9,10 @@ from apps.accounts.models import Role, UserProfile
 from apps.products.models import Category, Unit, Product, ProductVariety
 from apps.suppliers.models import Supplier
 from apps.customers.models import Customer
-from apps.transport.models import Truck
-from apps.warehouse.models import Warehouse
 from apps.purchases.models import PurchaseOrder, PurchaseOrderItem, SupplierTruckPayment
-from apps.sales.models import SalesOrder, SalesOrderItem, SalesInvoice
-from apps.inventory.models import InventoryBatch, InventoryStock
-from apps.payments.models import CustomerLedger, SupplierLedger, Payment
+from apps.sales.models import SalesOrder, SalesOrderItem
+from apps.inventory.models import InventoryLot, InventoryTransaction
+from apps.payments.models import CustomerLedger, SupplierLedger
 
 print("=== CLEANING BUSINESS DATA ===")
 
@@ -22,10 +20,9 @@ print("=== CLEANING BUSINESS DATA ===")
 SupplierTruckPayment.objects.all().delete()
 print("Cleared SupplierTruckPayment")
 
-SalesInvoice.objects.all().delete()
 SalesOrderItem.objects.all().delete()
 SalesOrder.objects.all().delete()
-print("Cleared SalesOrder, Items, Invoices")
+print("Cleared SalesOrder and Items")
 
 PurchaseOrderItem.objects.all().delete()
 PurchaseOrder.objects.all().delete()
@@ -33,15 +30,11 @@ print("Cleared PurchaseOrder and Items")
 
 CustomerLedger.objects.all().delete()
 SupplierLedger.objects.all().delete()
-Payment.objects.all().delete()
-print("Cleared Payments and Ledgers")
+print("Cleared Ledgers")
 
-InventoryStock.objects.all().delete()
-InventoryBatch.objects.all().delete()
-print("Cleared Inventory Batches and Stock")
-
-Truck.objects.all().delete()
-print("Cleared Trucks")
+InventoryLot.objects.all().delete()
+InventoryTransaction.objects.all().delete()
+print("Cleared Inventory Lots and Transactions")
 
 ProductVariety.objects.all().delete()
 Product.objects.all().delete()
@@ -53,9 +46,6 @@ print("Cleared Customers")
 Supplier.objects.all().delete()
 print("Cleared Suppliers")
 
-Warehouse.objects.all().delete()
-print("Cleared Warehouses")
-
 print("\n=== SETTING UP CLEAN MASTER ESSENTIALS ===")
 # Ensure master categories & units exist so new entries have valid foreign keys
 cat1, _ = Category.objects.get_or_create(id=1, defaults={'name': 'Fresh Fruits'})
@@ -66,19 +56,19 @@ u1, _ = Unit.objects.get_or_create(id=1, defaults={'unit_name': 'Kilogram', 'sym
 u2, _ = Unit.objects.get_or_create(id=2, defaults={'unit_name': 'Box', 'symbol': 'BX'})
 print(f"Units ready: {u1.unit_name}, {u2.unit_name}")
 
-wh, _ = Warehouse.objects.get_or_create(id=1, defaults={'warehouse_code': 'WH-001', 'warehouse_name': 'Main Mandi Storage', 'city': 'Delhi'})
-print(f"Default Warehouse ready: {wh.warehouse_name}")
-
-# Ensure admin user is active with password 'admin123'
+# Ensure admin user is active
 admin_user, created = User.objects.get_or_create(username='admin', defaults={'is_superuser': True, 'is_staff': True, 'first_name': 'Aziz', 'last_name': 'Admin'})
-admin_user.set_password('admin123')
+admin_pwd = os.getenv('ADMIN_PASSWORD')
+if admin_pwd:
+    admin_user.set_password(admin_pwd)
 admin_user.is_superuser = True
 admin_user.is_staff = True
+admin_user.is_active = True
 admin_user.save()
 
-super_role, _ = Role.objects.get_or_create(name='Super Admin', defaults={'description': 'System Administrator'})
+super_role, _ = Role.objects.get_or_create(code='SUPER_ADMIN', defaults={'name': 'Super Admin', 'description': 'System Administrator'})
 UserProfile.objects.get_or_create(user=admin_user, defaults={'role': super_role, 'phone': '9876543210'})
-print("Admin user ready with credentials (admin / admin123)")
+print(f"Admin user verified (active: {admin_user.is_active})")
 
 print("\n=== VERIFYING FINAL COUNTS ===")
 from django.apps import apps

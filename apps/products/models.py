@@ -29,11 +29,10 @@ class Product(AuditModel):
 class ProductVariety(AuditModel):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='varieties')
     variety_name = models.CharField(max_length=100)
-    grade = models.CharField(max_length=50, blank=True, null=True)
 
     class Meta:
         verbose_name_plural = 'Product Varieties'
-        unique_together = ('product', 'variety_name', 'grade')
+        unique_together = ('product', 'variety_name')
 
     def __str__(self):
-        return f"{self.product.name} - {self.variety_name} ({self.grade or 'Standard'})"
+        return f"{self.product.name} - {self.variety_name}"

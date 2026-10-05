@@ -23,26 +23,18 @@ class PurchaseOrder(AuditModel):
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='DRAFT')
 
     subtotal = models.DecimalField(max_digits=15, decimal_places=2, default=0)
-    discount = models.DecimalField(max_digits=15, decimal_places=2, default=0)
-    transport_charge = models.DecimalField(max_digits=15, decimal_places=2, default=0)
-    loading_charge = models.DecimalField(max_digits=15, decimal_places=2, default=0)
-    unloading_charge = models.DecimalField(max_digits=15, decimal_places=2, default=0)
-    commission_charge = models.DecimalField(max_digits=15, decimal_places=2, default=0)
-    tax_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0)
     grand_total = models.DecimalField(max_digits=15, decimal_places=2, default=0)
     paid_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0)
     due_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0)
     notes = models.TextField(blank=True, null=True)
 
     def calculate_totals(self):
+        from decimal import Decimal
         items = self.items.all()
         sub = sum(item.line_total for item in items)
         self.subtotal = sub
-        taxes = sum(item.tax_amount for item in items)
-        self.tax_amount = taxes
-        total_charges = self.transport_charge + self.loading_charge + self.unloading_charge + self.commission_charge
-        self.grand_total = max(0, sub - self.discount + total_charges + taxes)
-        self.due_amount = max(0, self.grand_total - self.paid_amount)
+        self.grand_total = sub
+        self.due_amount = max(Decimal('0'), self.grand_total - self.paid_amount)
         self.save()
 
     def __str__(self):
@@ -54,33 +46,17 @@ class PurchaseOrderItem(AuditModel):
     variety = models.ForeignKey(ProductVariety, on_delete=models.CASCADE)
 
     quantity_boxes = models.IntegerField(default=0)
-    gross_weight = models.DecimalField(max_digits=12, decimal_places=2, default=0)
-    tare_weight = models.DecimalField(max_digits=12, decimal_places=2, default=0)
-    net_weight = models.DecimalField(max_digits=12, decimal_places=2, default=0)
-    purchase_rate = models.DecimalField(max_digits=10, decimal_places=2, default=0) # Rate per KG
-    discount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0) # %
-    tax_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    purchase_rate = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     line_total = models.DecimalField(max_digits=15, decimal_places=2, default=0)
-    landed_cost_per_kg = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
-    quality_grade = models.CharField(max_length=50, default='Grade A')
     damage_boxes = models.IntegerField(default=0)
     accepted_boxes = models.IntegerField(default=0)
-    damage_weight = models.DecimalField(max_digits=12, decimal_places=2, default=0)
-    accepted_weight = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 
     def save(self, *args, **kwargs):
-        if self.net_weight == 0 and self.gross_weight > self.tare_weight:
-            self.net_weight = self.gross_weight - self.tare_weight
+        from decimal import Decimal
         if self.accepted_boxes == 0 and self.quantity_boxes > 0 and self.damage_boxes == 0:
             self.accepted_boxes = self.quantity_boxes
-        if self.accepted_weight == 0 and self.net_weight > 0 and self.damage_weight == 0:
-            self.accepted_weight = self.net_weight
-
-        base_cost = (self.net_weight * self.purchase_rate) - self.discount
-        self.tax_amount = (base_cost * (self.tax_rate / 100)) if self.tax_rate > 0 else 0
-        self.line_total = base_cost + self.tax_amount
+        self.line_total = Decimal(str(self.quantity_boxes)) * self.purchase_rate
         super().save(*args, **kwargs)
 
     def __str__(self):

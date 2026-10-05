@@ -6,34 +6,61 @@ from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import Role, UserProfile
 from .serializers import RoleSerializer, UserSerializer
+from .permissions import IsAdmin
 
 class RoleViewSet(viewsets.ModelViewSet):
     queryset = Role.objects.all()
     serializer_class = RoleSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [IsAdmin]
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all().select_related('profile')
     serializer_class = UserSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [IsAdmin]
 
 @api_view(['POST'])
 @permission_classes([permissions.AllowAny])
 def login_view(request):
-    username = request.data.get('username')
-    password = request.data.get('password')
+    username = (request.data.get('username') or '').strip()
+    password = request.data.get('password') or ''
+
+    if not username or not password:
+        return Response(
+            {'error': 'Username and password are required.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
     user = authenticate(username=username, password=password)
 
     if not user:
-        user = User.objects.filter(username=username).first()
-        if not user and username in ['admin', 'manager']:
-            user = User.objects.create_superuser(username=username, email=f'{username}@fruiterp.com', password=password or 'admin123')
-        elif user and not user.check_password(password):
-            return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+        # Check if user exists but inactive
+        existing = User.objects.filter(username=username).first()
+        if existing and not existing.is_active:
+            return Response(
+                {'error': 'Account is inactive. Please contact your administrator.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return Response(
+            {'error': 'Invalid username or password.'},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
 
+    if not user.is_active:
+        return Response(
+            {'error': 'Account is inactive. Please contact your administrator.'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    # Attach profile if none exists
     if not hasattr(user, 'profile'):
-        admin_role, _ = Role.objects.get_or_create(name='Super Admin', code='SUPER_ADMIN')
-        UserProfile.objects.create(user=user, role=admin_role, employee_code='EMP-001')
+        admin_role, _ = Role.objects.get_or_create(
+            name='Super Admin',
+            defaults={'code': 'SUPER_ADMIN', 'description': 'Full System Access'}
+        )
+        UserProfile.objects.get_or_create(
+            user=user,
+            defaults={'role': admin_role, 'employee_code': f'EMP-{user.id:03d}'}
+        )
 
     refresh = RefreshToken.for_user(user)
     return Response({
@@ -43,9 +70,6 @@ def login_view(request):
     })
 
 @api_view(['GET'])
-@permission_classes([permissions.AllowAny])
+@permission_classes([permissions.IsAuthenticated])
 def me_view(request):
-    user = User.objects.first()
-    if user:
-        return Response(UserSerializer(user).data)
-    return Response({'username': 'admin', 'role': 'Super Admin', 'is_authenticated': True})
+    return Response(UserSerializer(request.user).data)

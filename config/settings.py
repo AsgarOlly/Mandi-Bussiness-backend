@@ -11,10 +11,23 @@ sys.path.insert(0, str(BASE_DIR / 'apps'))
 
 load_dotenv(BASE_DIR / '.env')
 
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-fruit-erp-secret-key-production-ready')
-DEBUG = os.getenv('DEBUG', 'True') == 'True'
+from django.core.exceptions import ImproperlyConfigured
+
+DEBUG = os.getenv('DEBUG', 'True').lower() in ('true', '1')
+
+SECRET_KEY = os.getenv('SECRET_KEY')
+if not SECRET_KEY:
+    if not DEBUG:
+        raise ImproperlyConfigured("SECRET_KEY environment variable is required when DEBUG is False.")
+    SECRET_KEY = 'django-insecure-fruit-erp-development-key-never-use-in-production'
+
 allowed_hosts_env = os.getenv('ALLOWED_HOSTS')
-ALLOWED_HOSTS = [h.strip() for h in allowed_hosts_env.split(',') if h.strip()] if allowed_hosts_env else ['*']
+if allowed_hosts_env:
+    ALLOWED_HOSTS = [h.strip() for h in allowed_hosts_env.split(',') if h.strip()]
+elif DEBUG:
+    ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '*']
+else:
+    raise ImproperlyConfigured("ALLOWED_HOSTS environment variable is required when DEBUG is False.")
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -36,6 +49,7 @@ INSTALLED_APPS = [
     'apps.suppliers',
     'apps.customers',
     'apps.purchases',
+    'apps.inventory',
     'apps.sales',
     'apps.payments',
     'apps.reports',
@@ -118,23 +132,33 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # REST Framework configuration
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'apps.accounts.authentication.SafeJWTAuthentication',
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
         'rest_framework.authentication.SessionAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
-        'rest_framework.permissions.AllowAny',
+        'rest_framework.permissions.IsAuthenticated',
     ),
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 50,
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=30),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=90),
-    'ROTATE_REFRESH_TOKENS': False,
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=2),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': False,
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
-CORS_ALLOW_ALL_ORIGINS = True
+# CORS Configuration
+cors_origins_env = os.getenv('CORS_ALLOWED_ORIGINS') or os.getenv('FRONTEND_URL')
+if cors_origins_env:
+    CORS_ALLOWED_ORIGINS = [orig.strip() for orig in cors_origins_env.split(',') if orig.strip()]
+    CORS_ALLOW_ALL_ORIGINS = False
+elif DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = True
+else:
+    CORS_ALLOW_ALL_ORIGINS = False
+    CORS_ALLOWED_ORIGINS = []
+
 CORS_ALLOW_CREDENTIALS = True

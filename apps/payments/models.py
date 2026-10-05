@@ -52,31 +52,3 @@ class SupplierLedger(AuditModel):
 
     def __str__(self):
         return f"{self.supplier.supplier_name} - {self.transaction_type}: ₹{self.debit or self.credit}"
-
-class Payment(AuditModel):
-    PARTY_TYPES = (
-        ('CUSTOMER', 'Customer Receipt'),
-        ('SUPPLIER', 'Supplier Payment'),
-    )
-    PAYMENT_METHODS = (
-        ('CASH', 'Cash'),
-        ('UPI', 'UPI'),
-        ('BANK_TRANSFER', 'Bank Transfer / RTGS / NEFT'),
-        ('CHEQUE', 'Cheque'),
-        ('CARD', 'Card'),
-        ('OTHER', 'Other'),
-    )
-
-    payment_no = models.CharField(max_length=50, unique=True)
-    party_type = models.CharField(max_length=20, choices=PARTY_TYPES)
-    customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True, related_name='payments')
-    supplier = models.ForeignKey(Supplier, on_delete=models.SET_NULL, null=True, blank=True, related_name='payments')
-    payment_date = models.DateField()
-    amount = models.DecimalField(max_digits=15, decimal_places=2)
-    payment_method = models.CharField(max_length=30, choices=PAYMENT_METHODS, default='BANK_TRANSFER')
-    transaction_reference = models.CharField(max_length=100, blank=True, null=True)
-    notes = models.TextField(blank=True, null=True)
-
-    def __str__(self):
-        party = self.customer.customer_name if self.customer else (self.supplier.supplier_name if self.supplier else 'Party')
-        return f"{self.payment_no} [{self.party_type}] - {party}: ₹{self.amount}"

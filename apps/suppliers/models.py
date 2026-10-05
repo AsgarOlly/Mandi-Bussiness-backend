@@ -5,7 +5,6 @@ class Supplier(AuditModel):
     supplier_code = models.CharField(max_length=50, unique=True)
     supplier_name = models.CharField(max_length=150)
     phone = models.CharField(max_length=20, blank=True, default='')
-    # city = models.CharField(max_length=100, blank=True, default='')
     bank_name = models.CharField(max_length=100, blank=True, default='')
     account_number = models.CharField(max_length=50, blank=True, default='')
     ifsc_code = models.CharField(max_length=30, blank=True, default='')

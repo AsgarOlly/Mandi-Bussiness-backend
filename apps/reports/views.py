@@ -1,53 +1,66 @@
 import datetime
 from decimal import Decimal
-from django.db.models import Sum
+from django.db.models import Sum, Count, F, Q, ExpressionWrapper, DecimalField
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from apps.purchases.models import PurchaseOrder, PurchaseOrderItem, SupplierTruckPayment
 from apps.sales.models import SalesOrder, SalesOrderItem
 from apps.customers.models import Customer
 from apps.suppliers.models import Supplier
+from apps.inventory.models import InventoryLot, InventoryTransaction
+from apps.accounts.permissions import CanViewReports
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([CanViewReports])
 def dashboard_summary(request):
     today = datetime.date.today()
 
-    # Today's Purchases
+    # Today's Purchases Aggregation
     today_pos = PurchaseOrder.objects.filter(purchase_date=today)
-    today_purchase_amt = sum(p.grand_total for p in today_pos)
-    today_boxes_in = sum(
-        sum(item.quantity_boxes for item in p.items.all()) for p in today_pos
+    po_agg = today_pos.aggregate(
+        total_amt=Sum('grand_total'),
+        boxes_in=Sum('items__quantity_boxes')
     )
+    today_purchase_amt = po_agg['total_amt'] or Decimal('0')
+    today_boxes_in = po_agg['boxes_in'] or 0
 
-    # Today's Sales
+    # Today's Sales Aggregation
     today_sos = SalesOrder.objects.filter(order_date=today)
-    today_sales_amt = sum(s.grand_total for s in today_sos)
-    today_boxes_sold = sum(
-        sum(item.quantity_boxes for item in s.items.all()) for s in today_sos
+    so_agg = today_sos.aggregate(
+        total_amt=Sum('grand_total'),
+        boxes_sold=Sum('items__quantity_boxes')
     )
-    today_weight_sold = sum(
-        sum(float(item.net_weight) for item in s.items.all()) for s in today_sos
+    today_sales_amt = so_agg['total_amt'] or Decimal('0')
+    today_boxes_sold = so_agg['boxes_sold'] or 0
+    today_weight_sold = Decimal('0')
+
+    # Authoritative Stock from Active Inventory Lots
+    stock_agg = InventoryLot.objects.filter(status='ACTIVE').aggregate(
+        total_boxes=Sum('available_boxes'),
+        total_weight=Sum('available_weight'),
+        total_val=Sum(
+            ExpressionWrapper(
+                F('available_boxes') * F('landed_cost_per_box'),
+                output_field=DecimalField(max_digits=18, decimal_places=2)
+            )
+        )
     )
+    total_stock_boxes = stock_agg['total_boxes'] or 0
+    total_stock_weight = stock_agg['total_weight'] or Decimal('0')
+    total_stock_value = stock_agg['total_val'] or Decimal('0')
 
-    # Stock Valuation from Purchase and Sales items
-    total_in_boxes = sum(item.quantity_boxes for item in PurchaseOrderItem.objects.all())
-    total_sold_boxes = sum(item.quantity_boxes for item in SalesOrderItem.objects.all())
-    total_stock_boxes = max(0, total_in_boxes - total_sold_boxes)
-
-    total_in_weight = sum(float(item.net_weight) for item in PurchaseOrderItem.objects.all())
-    total_sold_weight = sum(float(item.net_weight) for item in SalesOrderItem.objects.all())
-    total_stock_weight = max(0.0, total_in_weight - total_sold_weight)
-
-    total_in_val = sum(float(item.line_total) for item in PurchaseOrderItem.objects.all())
-    total_sold_val = sum(float(item.line_total) for item in SalesOrderItem.objects.all())
-    total_stock_value = max(0.0, total_in_val - total_sold_val)
+    # Wastage Aggregation
+    wastage_agg = InventoryTransaction.objects.filter(transaction_type='WASTAGE').aggregate(
+        boxes=Sum('quantity_boxes'),
+        loss=Sum('total_cost')
+    )
+    wastage_boxes = abs(wastage_agg['boxes'] or 0)
+    wastage_loss = wastage_agg['loss'] or Decimal('0')
 
     # Outstanding Balances
-    cust_outstanding = sum(c.current_balance for c in Customer.objects.all())
-    supp_outstanding = sum(s.current_balance for s in Supplier.objects.all())
+    cust_outstanding = Customer.objects.aggregate(total=Sum('current_balance'))['total'] or Decimal('0')
+    supp_outstanding = Supplier.objects.aggregate(total=Sum('current_balance'))['total'] or Decimal('0')
 
     # Top selling fruits
     top_items = (
@@ -60,27 +73,27 @@ def dashboard_summary(request):
         for item in top_items
     ]
 
-    # Recent Trucks from Truck Payments or Purchase Orders
-    recent_payments = SupplierTruckPayment.objects.order_by('-payment_date', '-id')[:6]
+    # Recent Trucks from Supplier Truck Payments or Active Lots
+    recent_lots = InventoryLot.objects.select_related('supplier', 'product').order_by('-purchase_date', '-id')[:6]
     truck_data = [
         {
-            'id': p.id,
-            'truck_number': p.truck_number,
-            'party': p.supplier.supplier_name if p.supplier else 'Produce Transport',
+            'id': lot.id,
+            'truck_number': lot.truck_number or 'TRUCK-00',
+            'party': lot.supplier.supplier_name if lot.supplier else 'Produce Transport',
             'slot': 'Produce Arrival',
-            'status': 'ACTIVE',
-            'net_weight': float(p.no_of_boxes * 20),
-            'purpose': f'{p.fruit_name} ({p.no_of_boxes} boxes)'
-        } for p in recent_payments
+            'status': lot.status,
+            'net_weight': float(lot.available_weight),
+            'purpose': f"{lot.product.name} ({lot.available_boxes}/{lot.received_boxes} boxes)"
+        } for lot in recent_lots
     ]
 
-    # 7-day Sales vs Purchases trend
+    # 7-day trend
     chart_data = []
     for i in range(6, -1, -1):
         d = today - datetime.timedelta(days=i)
         d_str = d.strftime('%d %b')
-        s_val = sum(s.grand_total for s in SalesOrder.objects.filter(order_date=d))
-        p_val = sum(p.grand_total for p in PurchaseOrder.objects.filter(purchase_date=d))
+        s_val = SalesOrder.objects.filter(order_date=d).aggregate(s=Sum('grand_total'))['s'] or Decimal('0')
+        p_val = PurchaseOrder.objects.filter(purchase_date=d).aggregate(p=Sum('grand_total'))['p'] or Decimal('0')
         chart_data.append({
             'date': d_str,
             'sales': float(s_val),
@@ -93,65 +106,185 @@ def dashboard_summary(request):
         'stock_value': float(total_stock_value),
         'boxes_in': today_boxes_in,
         'boxes_sold': today_boxes_sold,
-        'weight_sold_kg': today_weight_sold,
-        'wastage_boxes': 0,
-        'wastage_loss': 0.0,
+        'weight_sold_kg': float(today_weight_sold),
+        'wastage_boxes': wastage_boxes,
+        'wastage_loss': float(wastage_loss),
         'customer_outstanding': float(cust_outstanding),
         'supplier_outstanding': float(supp_outstanding),
         'total_stock_boxes': total_stock_boxes,
-        'total_stock_weight_kg': total_stock_weight,
+        'total_stock_weight_kg': float(total_stock_weight),
         'top_fruits': top_fruits,
         'recent_trucks': truck_data,
         'trend_chart': chart_data
     })
 
+
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([CanViewReports])
 def daily_sales_report(request):
     date_str = request.GET.get('date', str(datetime.date.today()))
-    orders = SalesOrder.objects.filter(order_date=date_str).select_related('customer')
-    total_orders = orders.count()
-    total_boxes = sum(sum(item.quantity_boxes for item in o.items.all()) for o in orders)
-    total_weight = sum(sum(float(item.net_weight) for item in o.items.all()) for o in orders)
-    gross_sales = sum(o.subtotal for o in orders)
-    total_discount = sum(o.discount for o in orders)
-    total_tax = sum(o.tax_amount for o in orders)
-    net_sales = sum(o.grand_total for o in orders)
-    total_received = sum(o.paid_amount for o in orders)
-    outstanding = sum(o.due_amount for o in orders)
+    orders = SalesOrder.objects.filter(order_date=date_str)
+    agg = orders.aggregate(
+        total_orders=Count('id'),
+        total_boxes=Sum('items__quantity_boxes'),
+        gross_sales=Sum('subtotal'),
+        net_sales=Sum('grand_total'),
+        received=Sum('paid_amount'),
+        outstanding=Sum('due_amount')
+    )
 
     return Response({
         'date': date_str,
-        'total_orders': total_orders,
-        'total_boxes': total_boxes,
-        'total_weight_kg': total_weight,
-        'gross_sales': float(gross_sales),
-        'discount': float(total_discount),
-        'tax': float(total_tax),
-        'net_sales': float(net_sales),
-        'received': float(total_received),
-        'outstanding': float(outstanding)
+        'total_orders': agg['total_orders'] or 0,
+        'total_boxes': agg['total_boxes'] or 0,
+        'total_weight_kg': 0.0,
+        'gross_sales': float(agg['gross_sales'] or 0),
+        'discount': 0.0,
+        'tax': 0.0,
+        'net_sales': float(agg['net_sales'] or 0),
+        'received': float(agg['received'] or 0),
+        'outstanding': float(agg['outstanding'] or 0)
     })
 
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def profit_loss_report(request):
-    sales = SalesOrder.objects.all()
-    total_revenue = sum(s.grand_total for s in sales)
-    total_cogs = Decimal('0')
-    total_margin = Decimal('0')
 
-    for s in sales:
-        for item in s.items.all():
-            cost = item.cost_rate * (item.net_weight if item.net_weight > 0 else Decimal(str(item.quantity_boxes)))
-            total_cogs += cost
-            total_margin += item.gross_margin
+@api_view(['GET'])
+@permission_classes([CanViewReports])
+def monthly_sales_report(request):
+    year = int(request.GET.get('year', datetime.date.today().year))
+    month = int(request.GET.get('month', datetime.date.today().month))
+
+    orders = SalesOrder.objects.filter(order_date__year=year, order_date__month=month)
+    agg = orders.aggregate(
+        total_orders=Count('id'),
+        total_boxes=Sum('items__quantity_boxes'),
+        total_revenue=Sum('grand_total'),
+        total_collected=Sum('paid_amount'),
+        total_due=Sum('due_amount')
+    )
+
+    return Response({
+        'year': year,
+        'month': month,
+        'total_orders': agg['total_orders'] or 0,
+        'total_boxes': agg['total_boxes'] or 0,
+        'total_revenue': float(agg['total_revenue'] or 0),
+        'total_collected': float(agg['total_collected'] or 0),
+        'total_due': float(agg['total_due'] or 0)
+    })
+
+
+@api_view(['GET'])
+@permission_classes([CanViewReports])
+def inventory_summary_report(request):
+    lots = InventoryLot.objects.filter(status='ACTIVE').values(
+        'product__name', 'variety__variety_name', 'warehouse_name'
+    ).annotate(
+        boxes=Sum('available_boxes'),
+        weight=Sum('available_weight'),
+        value=Sum(
+            ExpressionWrapper(
+                F('available_boxes') * F('landed_cost_per_box'),
+                output_field=DecimalField(max_digits=18, decimal_places=2)
+            )
+        )
+    ).order_by('product__name')
+
+    return Response({
+        'items': [
+            {
+                'fruit': l['product__name'],
+                'variety': l['variety__variety_name'],
+                'warehouse': l['warehouse_name'],
+                'boxes': l['boxes'] or 0,
+                'weight_kg': float(l['weight'] or 0),
+                'value': float(l['value'] or 0)
+            } for l in lots
+        ]
+    })
+
+
+@api_view(['GET'])
+@permission_classes([CanViewReports])
+def customer_outstanding_report(request):
+    customers = Customer.objects.filter(current_balance__gt=0).order_by('-current_balance')
+    return Response({
+        'total_outstanding': float(customers.aggregate(total=Sum('current_balance'))['total'] or 0),
+        'customers': [
+            {
+                'id': c.id,
+                'customer_code': c.customer_code,
+                'customer_name': c.customer_name,
+                'phone': c.phone,
+                'balance': float(c.current_balance)
+            } for c in customers
+        ]
+    })
+
+
+@api_view(['GET'])
+@permission_classes([CanViewReports])
+def supplier_outstanding_report(request):
+    suppliers = Supplier.objects.filter(current_balance__gt=0).order_by('-current_balance')
+    return Response({
+        'total_outstanding': float(suppliers.aggregate(total=Sum('current_balance'))['total'] or 0),
+        'suppliers': [
+            {
+                'id': s.id,
+                'supplier_code': s.supplier_code,
+                'supplier_name': s.supplier_name,
+                'phone': s.phone,
+                'balance': float(s.current_balance)
+            } for s in suppliers
+        ]
+    })
+
+
+@api_view(['GET'])
+@permission_classes([CanViewReports])
+def profit_loss_report(request):
+    # Total Revenue from sales
+    sales_agg = SalesOrder.objects.exclude(status='CANCELLED').aggregate(
+        revenue=Sum('grand_total'),
+        sales_transport=Sum('transport_charge'),
+        sales_loading=Sum('loading_charge')
+    )
+    total_revenue = sales_agg['revenue'] or Decimal('0')
+
+    # COGS from sales issue inventory transactions
+    sales_issue_agg = InventoryTransaction.objects.filter(
+        transaction_type='SALES_ISSUE'
+    ).aggregate(cogs=Sum('total_cost'))
+    total_cogs = abs(sales_issue_agg['cogs'] or Decimal('0'))
+    gross_profit = total_revenue - total_cogs
+
+    # Real Operating Expenses from SupplierTruckPayment & Sales charges
+    purchase_expenses_agg = SupplierTruckPayment.objects.aggregate(
+        transport=Sum('transport_charge'),
+        loading=Sum('loading_charge'),
+        unloading=Sum('unloading_charge'),
+        commission=Sum('commission_charge')
+    )
+    total_expenses = (
+        (purchase_expenses_agg['transport'] or Decimal('0')) +
+        (purchase_expenses_agg['loading'] or Decimal('0')) +
+        (purchase_expenses_agg['unloading'] or Decimal('0')) +
+        (purchase_expenses_agg['commission'] or Decimal('0')) +
+        (sales_agg['sales_transport'] or Decimal('0')) +
+        (sales_agg['sales_loading'] or Decimal('0'))
+    )
+
+    # Real Wastage Loss from Inventory transactions
+    wastage_loss = InventoryTransaction.objects.filter(transaction_type='WASTAGE').aggregate(
+        loss=Sum('total_cost')
+    )['loss'] or Decimal('0')
+
+    net_profit = gross_profit - total_expenses - wastage_loss
 
     return Response({
         'revenue': float(total_revenue),
         'cogs': float(total_cogs),
-        'gross_profit': float(total_margin),
-        'expenses': 0.0,
-        'wastage_loss': 0.0,
-        'net_profit': float(total_margin),
+        'gross_profit': float(gross_profit),
+        'expenses': float(total_expenses),
+        'wastage_loss': float(wastage_loss),
+        'net_profit': float(net_profit),
     })
